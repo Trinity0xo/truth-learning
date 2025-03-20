@@ -15,14 +15,13 @@ public class UserService {
 
     public User handleCreateNewUser(RegisterDto registerDto){
 
-//        User user = User.builder()
-//                .firstName(registerDto.getFirstName())
-//                .lastName(registerDto.getLastName())
-//                .email(registerDto.getEmail())
-//                .password(registerDto.getPassword())
-//                .build();
+        User user = new User();
+        user.setEmail(registerDto.getEmail());
+        user.setLastName(registerDto.getLastName());
+        user.setFirstName(registerDto.getFirstName());
+        user.setPassword(registerDto.getPassword());
 
-        return this.userRepository.save(null);
+        return this.userRepository.save(user);
     }
 
     public User handleGetUserByEmail(String email){
