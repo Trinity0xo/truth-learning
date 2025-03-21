@@ -8,10 +8,10 @@ import org.hibernate.annotations.OnDeleteAction;
 
 import java.time.Instant;
 
+@Entity
 @Getter
 @Setter
-@Entity
-public class RefreshToken {
+public class VerifyToken {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -24,6 +24,5 @@ public class RefreshToken {
     @Column(columnDefinition = "MEDIUMTEXT", unique = true)
     private String tokenValue;
 
-    private Instant iat;
-    private Instant exp;
+    private Instant expireTime;
 }

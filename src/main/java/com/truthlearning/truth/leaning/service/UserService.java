@@ -24,6 +24,10 @@ public class UserService {
         return this.userRepository.save(user);
     }
 
+    public void handleUpdateVerifyStatus(User user){
+        user.setVerified(true);
+    }
+
     public User handleGetUserByEmail(String email){
         return this.userRepository.findByEmail(email).orElse(null);
     }

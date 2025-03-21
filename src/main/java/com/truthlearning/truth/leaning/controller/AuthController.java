@@ -2,16 +2,19 @@ package com.truthlearning.truth.leaning.controller;
 
 import com.truthlearning.truth.leaning.domain.RefreshToken;
 import com.truthlearning.truth.leaning.domain.User;
+import com.truthlearning.truth.leaning.domain.VerifyToken;
 import com.truthlearning.truth.leaning.domain.response.RestApiResponse;
 import com.truthlearning.truth.leaning.domain.response.auth.LoginResponse;
 import com.truthlearning.truth.leaning.dto.auth.LoginDto;
 import com.truthlearning.truth.leaning.dto.auth.RegisterDto;
-import com.truthlearning.truth.leaning.service.RefreshTokenService;
-import com.truthlearning.truth.leaning.service.JsonWebTokenService;
-import com.truthlearning.truth.leaning.service.UserService;
+import com.truthlearning.truth.leaning.dto.auth.VerifyEmailDto;
+import com.truthlearning.truth.leaning.service.*;
 import com.truthlearning.truth.leaning.util.ResponseUtil;
 import com.truthlearning.truth.leaning.util.SecurityUtil;
-import jakarta.validation.constraints.Null;
+import com.truthlearning.truth.leaning.util.error.BadRequestException;
+import com.truthlearning.truth.leaning.util.error.ConflictException;
+import com.truthlearning.truth.leaning.util.error.NotFoundException;
+import com.truthlearning.truth.leaning.util.error.UnAuthorizedException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -28,35 +31,81 @@ import org.springframework.web.bind.annotation.*;
 import java.time.Instant;
 
 @RestController
-@RequestMapping("/auth")
+@RequestMapping("api/v1/auth")
 public class AuthController {
     private final UserService userService;
     private final PasswordEncoder passwordEncoder;
     private final JsonWebTokenService jsonWebTokenService;
     private final RefreshTokenService refreshTokenService;
     private final AuthenticationManagerBuilder authenticationManagerBuilder;
+    private final MailService mailService;
+    private final VerifyTokenService verifyTokenService;
 
-    public AuthController(UserService userService, PasswordEncoder passwordEncoder, JsonWebTokenService jsonWebTokenService, RefreshTokenService refreshTokenService, AuthenticationManagerBuilder authenticationManagerBuilder) {
+    public AuthController(UserService userService, PasswordEncoder passwordEncoder, JsonWebTokenService jsonWebTokenService, RefreshTokenService refreshTokenService, AuthenticationManagerBuilder authenticationManagerBuilder, MailService mailService, VerifyTokenService verifyTokenService) {
         this.userService = userService;
         this.passwordEncoder = passwordEncoder;
         this.jsonWebTokenService = jsonWebTokenService;
         this.refreshTokenService = refreshTokenService;
         this.authenticationManagerBuilder = authenticationManagerBuilder;
+        this.mailService = mailService;
+        this.verifyTokenService = verifyTokenService;
     }
 
     @Value("${jwt.refresh-token-valid-time-in-seconds}")
     private long refreshTokenExpireTime;
 
+    @Value("${verify.token-valid-time-in-seconds}")
+    private long verifyTokenExpireTime;
+
     @PostMapping("/register")
-    public ResponseEntity<User> register(
+    public ResponseEntity<RestApiResponse<Void>> register(
             @RequestBody RegisterDto registerDto
             ){
+
+        User user = this.userService.handleGetUserByEmail(registerDto.getEmail());
+        if(user !=null){
+            throw new ConflictException("Người dùng đã tồn tại");
+        }
+
         String hashedPassword = passwordEncoder.encode(registerDto.getPassword());
         registerDto.setPassword(hashedPassword);
 
-        User user = this.userService.handleCreateNewUser(registerDto);
+        user = this.userService.handleCreateNewUser(registerDto);
 
-        return ResponseEntity.status(HttpStatus.CREATED).body(user);
+        VerifyToken verifyEmailToken = this.verifyTokenService.handleCreateVerifyToken(user,verifyTokenExpireTime);
+
+        String username = user.getFirstName() + " " + user.getLastName();
+
+        this.mailService.handleSendVerifyEmailLink(username, user.getEmail(), verifyEmailToken.getTokenValue());
+
+        RestApiResponse<Void> response
+                = ResponseUtil.success(null, "Đăng ký thành công, vui lòng kiểm tra email để xác thực tài khoản", HttpStatus.CREATED.value());
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @PostMapping("/verify-email")
+    public ResponseEntity<RestApiResponse<Void>> verifyEmail(
+            @RequestBody VerifyEmailDto verifyEmailDto
+            ){
+
+        VerifyToken verifyTokenDb = this.verifyTokenService.handleGetVerifyEmailTokenByTokenValue(verifyEmailDto.getVerifyEmailToken());
+        if(verifyTokenDb == null){
+            throw new BadRequestException("Token không hợp lệ hoặc hết hạn");
+        }
+
+        boolean isValidExpire = this.verifyTokenService.handleCheckValidExpireTime(verifyTokenDb);
+        if(!isValidExpire){
+            throw new BadRequestException("Token không hợp lệ hoặc hết hạn");
+        }
+
+        this.userService.handleUpdateVerifyStatus(verifyTokenDb.getUser());
+
+        this.verifyTokenService.handleDeleteVerifyEmailToken(verifyTokenDb);
+
+        RestApiResponse<Void> response = ResponseUtil.success(null, "Xác thực tài khoản thành công", HttpStatus.OK.value());
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 
     @PostMapping("/login")
@@ -73,6 +122,18 @@ public class AuthController {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         User user = this.userService.handleGetUserByEmail(loginDto.getEmail());
+        if(!user.isVerified()){
+            VerifyToken oldVerifyToken = this.verifyTokenService.handleGetVerifyEmailTokenByUser(user);
+            if(oldVerifyToken !=null){
+                this.verifyTokenService.handleDeleteVerifyEmailToken(oldVerifyToken);
+            }
+
+            VerifyToken verifyEmailToken = this.verifyTokenService.handleCreateVerifyToken(user,verifyTokenExpireTime);
+            String username = user.getFirstName() + " " + user.getLastName();
+            this.mailService.handleSendVerifyEmailLink(username, user.getEmail(), verifyEmailToken.getTokenValue());
+
+            throw new UnAuthorizedException("Tài khoản chưa xác thực email, vui lòng kiểm tra email để xác thực");
+        }
 
         LoginResponse.UserResponse userResponse = new LoginResponse.UserResponse();
         userResponse.setFirstName(user.getFirstName());
@@ -103,52 +164,45 @@ public class AuthController {
         loginResponse.setAccess_token(accessToken);
 
         RestApiResponse<LoginResponse> response
-                = ResponseUtil.success(loginResponse, "Login success", HttpStatus.OK.value());
+                = ResponseUtil.success(loginResponse, "Đăng nhập thành công", HttpStatus.OK.value());
 
         return ResponseEntity.status(HttpStatus.OK).header(HttpHeaders.SET_COOKIE, responseCookie.toString()).body(response);
     }
 
-    @PostMapping("/refreshToken")
+    @PostMapping("/refresh-token")
     public ResponseEntity<RestApiResponse<LoginResponse>> refreshToken(
             @CookieValue(name = "refresh_token", defaultValue = "") String refreshToken
     ) {
-//        if(refreshToken.isEmpty()){
-//            return ResponseEntity.ok().body("refresh token not found");
-//        }
-
         Jwt jwt = this.jsonWebTokenService.checkValidRefreshToken(refreshToken);
 
         String email = jwt.getSubject();
 
         User user = this.userService.handleGetUserByEmail(email);
-//        if(user == null){
-//            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("user not found");
-//        }
+        if(user == null){
+            throw new NotFoundException("Không tìm thấy người dùng");
+        }
 
-        RefreshToken oldRefreshToken = this.refreshTokenService.handleGetRefreshToken(user, refreshToken);
-//        if(oldRefreshToken == null){
-//            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("refresh token is invalid");
-//        }
+        RefreshToken refreshTokenDb = this.refreshTokenService.handleGetRefreshToken(user, refreshToken);
+        if(refreshTokenDb == null){
+            throw new BadRequestException("Token không hợp lệ hoặc hết hạn");
+        }
 
         Instant tokenExp = jwt.getExpiresAt();
         Instant tokenIat = jwt.getIssuedAt();
 
-//        if(tokenIat == null || tokenExp == null){
-//            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("refresh token is invalid");
-//        }
 
-        boolean validExpire = this.refreshTokenService.handleCheckValidExpireTime(oldRefreshToken, tokenIat, tokenExp);
+        boolean isValidExpire = this.refreshTokenService.handleCheckValidExpireTime(refreshTokenDb, tokenIat, tokenExp);
 
-//        if(!validExpire){
-//            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("refresh token is invalid");
-//        }
+        if(!isValidExpire){
+            throw new BadRequestException("Token không hợp lệ hoặc hết hạn");
+        }
 
         LoginResponse.UserResponse userResponse = new LoginResponse.UserResponse();
         userResponse.setFirstName(user.getFirstName());
         userResponse.setLastName(user.getLastName());
         userResponse.setEmail(user.getEmail());
 
-        String accessToken = this.jsonWebTokenService.createAccessToken(userResponse);
+        String newAccessToken = this.jsonWebTokenService.createAccessToken(userResponse);
 
         String newRefreshToken = this.jsonWebTokenService.createRefreshToken(userResponse.getEmail());
 
@@ -159,7 +213,7 @@ public class AuthController {
 
         this.refreshTokenService.handleAddRefreshTokenToUser(user, newRefreshToken, newTokenIat, newTokenExp);
 
-        this.refreshTokenService.handleDeleteOldRefreshToken(oldRefreshToken);
+        this.refreshTokenService.handleDeleteOldRefreshToken(refreshTokenDb);
 
         ResponseCookie responseCookie = ResponseCookie
                 .from("refresh_token", newRefreshToken)
@@ -171,7 +225,7 @@ public class AuthController {
 
         LoginResponse loginResponse = new LoginResponse();
         loginResponse.setUser(userResponse);
-        loginResponse.setAccess_token(accessToken);
+        loginResponse.setAccess_token(newAccessToken);
 
         RestApiResponse<LoginResponse> response
                 = ResponseUtil.success(loginResponse, "Refresh token success", HttpStatus.OK.value());
@@ -204,7 +258,7 @@ public class AuthController {
         SecurityContextHolder.clearContext();
 
         RestApiResponse<Void> response
-                = ResponseUtil.success(null, "Logout success", HttpStatus.OK.value());
+                = ResponseUtil.success(null, "Đăng xuất thành công", HttpStatus.OK.value());
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, emptySpringCookie.toString())

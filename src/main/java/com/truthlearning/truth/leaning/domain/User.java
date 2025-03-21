@@ -25,8 +25,13 @@ public class User {
     private String avatar;
     private String firstName;
     private String lastName;
+
+    @Column(unique = true)
     private String email;
+
     private String password;
+
+    private boolean isVerified = false;
 
     @OneToMany(mappedBy = "user")
     private List<RefreshToken> refreshTokenList;

@@ -5,6 +5,9 @@ import com.truthlearning.truth.leaning.util.SecurityUtil;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.ProviderManager;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -27,17 +30,29 @@ public class CustomSecurityConfiguration {
     }
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity httpSecurity,CustomOAuth2SuccessHandler customOAuth2SuccessHandler, CustomAuthenticationEntryPoint customAuthenticationEntryPoint) throws Exception {
+    public AuthenticationManager authenticationManager(
+            CustomUserDetailsService userDetailsService,
+            PasswordEncoder passwordEncoder) {
+        DaoAuthenticationProvider authenticationProvider = new DaoAuthenticationProvider();
+        authenticationProvider.setUserDetailsService(userDetailsService);
+        authenticationProvider.setPasswordEncoder(passwordEncoder);
+
+        return new ProviderManager(authenticationProvider);
+    }
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity httpSecurity, CustomOAuth2UserService customOAuth2UserService,CustomUserDetailsService customUserDetailsService, CustomOAuth2SuccessHandler customOAuth2SuccessHandler, CustomAuthenticationEntryPoint customAuthenticationEntryPoint) throws Exception {
         httpSecurity
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults())
                 .authorizeHttpRequests(
                 authorize -> authorize
-                        .requestMatchers("/auth/login", "/auth/register", "/oauth2/**", "/auth/refreshToken").permitAll()
+                        .requestMatchers("api/v1/auth/login", "api/v1/auth/register", "/oauth2/**", "api/v1/auth/refreshToken", "api/v1/auth/verify-email").permitAll()
                         .anyRequest().authenticated())
                 .formLogin(AbstractHttpConfigurer::disable)
                 .sessionManagement(session->session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .oauth2Login(oauth2 -> oauth2
+                        .userInfoEndpoint(endpoint -> endpoint.userService(customOAuth2UserService))
                         .successHandler(customOAuth2SuccessHandler))
                 .oauth2ResourceServer((oauth2) -> oauth2
                         .jwt(Customizer.withDefaults())

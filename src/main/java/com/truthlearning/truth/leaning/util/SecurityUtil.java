@@ -11,6 +11,7 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import java.util.Base64;
 import java.util.Optional;
+import java.util.UUID;
 
 public class SecurityUtil {
     public static final MacAlgorithm JWT_ALGORITHM = MacAlgorithm.HS256;
@@ -36,5 +37,9 @@ public class SecurityUtil {
             return s;
         }
         return null;
+    }
+
+    public static  String generateRandomToken() {
+        return UUID.randomUUID().toString();
     }
 }

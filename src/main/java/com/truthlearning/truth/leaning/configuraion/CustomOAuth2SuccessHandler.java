@@ -34,9 +34,6 @@ public class CustomOAuth2SuccessHandler implements AuthenticationSuccessHandler 
     @Value("${jwt.refresh-token-valid-time-in-seconds}")
     private long refreshTokenExpireTime;
 
-    @Value("${client.url}")
-    private String clientUrl;
-
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response, Authentication authentication) throws IOException, ServletException {
         OAuth2User oAuth2User = (OAuth2User) authentication.getPrincipal();
@@ -68,6 +65,6 @@ public class CustomOAuth2SuccessHandler implements AuthenticationSuccessHandler 
 
         response.addCookie(refreshTokenCookie);
 
-        response.sendRedirect(clientUrl +"?token=" + accessToken);
+        response.sendRedirect("http://localhost:3000?token=" + accessToken);
     }
 }
