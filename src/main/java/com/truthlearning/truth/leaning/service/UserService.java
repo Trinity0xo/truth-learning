@@ -24,6 +24,11 @@ public class UserService {
         return this.userRepository.save(user);
     }
 
+    public void handleUpdateUserPassword(User user, String newPassword){
+        user.setPassword(newPassword);
+        this.userRepository.save(user);
+    }
+
     public void handleUpdateVerifyStatus(User user){
         user.setVerified(true);
     }

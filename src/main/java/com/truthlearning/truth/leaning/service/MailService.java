@@ -55,4 +55,10 @@ public class MailService {
         String verifyLink = "http://localhost:3000/verify-email?token=" + verifyEmailToken;
         this.sendEmailFromTemplateSync(email, "Xác thực tài khoản","/email/verifyEmail", username, verifyLink);
     }
+
+    @Async
+    public void handleSendResetPasswordLink(String username, String email, String verifyResetPasswordToken){
+        String verifyLink = "http://localhost:3000/reset-password?token=" + verifyResetPasswordToken;
+        this.sendEmailFromTemplateSync(email, "Reset mật khẩu","/email/resetPassword", username, verifyLink);
+    }
 }

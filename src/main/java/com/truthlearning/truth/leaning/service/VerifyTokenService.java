@@ -31,11 +31,11 @@ public class VerifyTokenService {
         return this.verifyTokenRepository.save(verifyToken);
     }
 
-    public VerifyToken handleGetVerifyEmailTokenByTokenValue(String tokenValue){
+    public VerifyToken handleGetVerifyTokenByTokenValue(String tokenValue){
         return this.verifyTokenRepository.findByTokenValue(tokenValue).orElse(null);
     }
 
-    public VerifyToken handleGetVerifyEmailTokenByUser(User user){
+    public VerifyToken handleGetVerifyTokenByUser(User user){
         return this.verifyTokenRepository.findByUser(user).orElse(null);
     }
 
@@ -50,7 +50,7 @@ public class VerifyTokenService {
         return isValid;
     }
 
-    public void handleDeleteVerifyEmailToken(VerifyToken verifyToken){
+    public void handleDeleteVerifyToken(VerifyToken verifyToken){
         this.verifyTokenRepository.delete(verifyToken);
     }
 }

@@ -5,9 +5,7 @@ import com.truthlearning.truth.leaning.domain.User;
 import com.truthlearning.truth.leaning.domain.VerifyToken;
 import com.truthlearning.truth.leaning.domain.response.RestApiResponse;
 import com.truthlearning.truth.leaning.domain.response.auth.LoginResponse;
-import com.truthlearning.truth.leaning.dto.auth.LoginDto;
-import com.truthlearning.truth.leaning.dto.auth.RegisterDto;
-import com.truthlearning.truth.leaning.dto.auth.VerifyEmailDto;
+import com.truthlearning.truth.leaning.dto.auth.*;
 import com.truthlearning.truth.leaning.service.*;
 import com.truthlearning.truth.leaning.util.ResponseUtil;
 import com.truthlearning.truth.leaning.util.SecurityUtil;
@@ -54,8 +52,11 @@ public class AuthController {
     @Value("${jwt.refresh-token-valid-time-in-seconds}")
     private long refreshTokenExpireTime;
 
-    @Value("${verify.token-valid-time-in-seconds}")
-    private long verifyTokenExpireTime;
+    @Value("${verify.email-token-valid-time-in-seconds}")
+    private long verifyEmailTokenExpireTime;
+
+    @Value("${verify.reset-password-token-valid-time-in-seconds}")
+    private long verifyResetPasswordTokenExpireTime;
 
     @PostMapping("/register")
     public ResponseEntity<RestApiResponse<Void>> register(
@@ -72,7 +73,7 @@ public class AuthController {
 
         user = this.userService.handleCreateNewUser(registerDto);
 
-        VerifyToken verifyEmailToken = this.verifyTokenService.handleCreateVerifyToken(user,verifyTokenExpireTime);
+        VerifyToken verifyEmailToken = this.verifyTokenService.handleCreateVerifyToken(user, verifyEmailTokenExpireTime);
 
         String username = user.getFirstName() + " " + user.getLastName();
 
@@ -86,24 +87,74 @@ public class AuthController {
 
     @PostMapping("/verify-email")
     public ResponseEntity<RestApiResponse<Void>> verifyEmail(
-            @RequestBody VerifyEmailDto verifyEmailDto
+            @RequestBody VerifyTokenDto verifyTokenDto
             ){
 
-        VerifyToken verifyTokenDb = this.verifyTokenService.handleGetVerifyEmailTokenByTokenValue(verifyEmailDto.getVerifyEmailToken());
+        VerifyToken verifyTokenDb = this.verifyTokenService.handleGetVerifyTokenByTokenValue(verifyTokenDto.getVerifyToken());
         if(verifyTokenDb == null){
-            throw new BadRequestException("Token không hợp lệ hoặc hết hạn");
+            throw new BadRequestException("Link không hợp lệ hoặc hết hạn");
         }
 
         boolean isValidExpire = this.verifyTokenService.handleCheckValidExpireTime(verifyTokenDb);
         if(!isValidExpire){
-            throw new BadRequestException("Token không hợp lệ hoặc hết hạn");
+            throw new BadRequestException("Link không hợp lệ hoặc hết hạn");
         }
 
         this.userService.handleUpdateVerifyStatus(verifyTokenDb.getUser());
 
-        this.verifyTokenService.handleDeleteVerifyEmailToken(verifyTokenDb);
+        this.verifyTokenService.handleDeleteVerifyToken(verifyTokenDb);
 
         RestApiResponse<Void> response = ResponseUtil.success(null, "Xác thực tài khoản thành công", HttpStatus.OK.value());
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<RestApiResponse<Void>> forgotPassword(
+            @RequestBody ForgotPasswordDto forgotPasswordDto
+    ){
+        User user = this.userService.handleGetUserByEmail(forgotPasswordDto.getEmail());
+        if(user == null){
+            throw new NotFoundException("Không tìm thấy tài khoản");
+        }
+
+        VerifyToken oldVerifyToken = this.verifyTokenService.handleGetVerifyTokenByUser(user);
+        if(oldVerifyToken != null){
+            this.verifyTokenService.handleDeleteVerifyToken(oldVerifyToken);
+        }
+
+        VerifyToken verifyResetPasswordToken = this.verifyTokenService.handleCreateVerifyToken(user, verifyEmailTokenExpireTime);
+        String username = user.getFirstName() + " " + user.getLastName();
+
+        this.mailService.handleSendResetPasswordLink(username, user.getEmail(), verifyResetPasswordToken.getTokenValue());
+
+        RestApiResponse<Void> response = ResponseUtil.success(null, "Gửi yêu cầu thay đổi mật khẩu thành công, vui lòng kiểm tra email của bạn", HttpStatus.OK.value());
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<RestApiResponse<Void>> resetPassword(
+            @RequestBody ResetPasswordDto resetPasswordDto
+    ){
+
+        VerifyToken verifyTokenDb = this.verifyTokenService.handleGetVerifyTokenByTokenValue(resetPasswordDto.getVerifyToken());
+        if(verifyTokenDb == null){
+            throw new BadRequestException("Link không hợp lệ hoặc hết hạn");
+        }
+
+        boolean isValidExpire = this.verifyTokenService.handleCheckValidExpireTime(verifyTokenDb);
+        if(!isValidExpire){
+            throw new BadRequestException("Link không hợp lệ hoặc hết hạn");
+        }
+
+        String hashedNewPassword = this.passwordEncoder.encode(resetPasswordDto.getNewPassword());
+
+        this.userService.handleUpdateUserPassword(verifyTokenDb.getUser(), hashedNewPassword);
+
+        this.verifyTokenService.handleDeleteVerifyToken(verifyTokenDb);
+
+        RestApiResponse<Void> response = ResponseUtil.success(null, "Cập nhật mật khẩu thành công", HttpStatus.OK.value());
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }
@@ -123,12 +174,12 @@ public class AuthController {
 
         User user = this.userService.handleGetUserByEmail(loginDto.getEmail());
         if(!user.isVerified()){
-            VerifyToken oldVerifyToken = this.verifyTokenService.handleGetVerifyEmailTokenByUser(user);
+            VerifyToken oldVerifyToken = this.verifyTokenService.handleGetVerifyTokenByUser(user);
             if(oldVerifyToken !=null){
-                this.verifyTokenService.handleDeleteVerifyEmailToken(oldVerifyToken);
+                this.verifyTokenService.handleDeleteVerifyToken(oldVerifyToken);
             }
 
-            VerifyToken verifyEmailToken = this.verifyTokenService.handleCreateVerifyToken(user,verifyTokenExpireTime);
+            VerifyToken verifyEmailToken = this.verifyTokenService.handleCreateVerifyToken(user, verifyEmailTokenExpireTime);
             String username = user.getFirstName() + " " + user.getLastName();
             this.mailService.handleSendVerifyEmailLink(username, user.getEmail(), verifyEmailToken.getTokenValue());
 

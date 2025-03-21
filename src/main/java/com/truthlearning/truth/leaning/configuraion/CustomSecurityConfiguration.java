@@ -47,7 +47,7 @@ public class CustomSecurityConfiguration {
                 .cors(Customizer.withDefaults())
                 .authorizeHttpRequests(
                 authorize -> authorize
-                        .requestMatchers("api/v1/auth/login", "api/v1/auth/register", "/oauth2/**", "api/v1/auth/refreshToken", "api/v1/auth/verify-email").permitAll()
+                        .requestMatchers("api/v1/auth/login", "api/v1/auth/register", "/oauth2/**", "api/v1/auth/refreshToken", "api/v1/auth/verify-email" ,"api/v1/auth/forgot-password", "api/v1/auth/reset-password").permitAll()
                         .anyRequest().authenticated())
                 .formLogin(AbstractHttpConfigurer::disable)
                 .sessionManagement(session->session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
