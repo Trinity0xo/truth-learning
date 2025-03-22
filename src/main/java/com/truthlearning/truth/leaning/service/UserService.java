@@ -20,6 +20,7 @@ public class UserService {
         user.setLastName(registerDto.getLastName());
         user.setFirstName(registerDto.getFirstName());
         user.setPassword(registerDto.getPassword());
+        user.setVerified(registerDto.isVerified());
 
         return this.userRepository.save(user);
     }
@@ -31,6 +32,7 @@ public class UserService {
 
     public void handleUpdateVerifyStatus(User user){
         user.setVerified(true);
+        this.userRepository.save(user);
     }
 
     public User handleGetUserByEmail(String email){
