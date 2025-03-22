@@ -8,4 +8,5 @@ import lombok.Setter;
 public class RegisterDto extends LoginDto {
     private String firstName;
     private String lastName;
+    private boolean isVerified = false;
 }

@@ -35,9 +35,14 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
             registerDto.setEmail(email);
             registerDto.setFirstName(firstName);
             registerDto.setLastName(lastName);
+            registerDto.setVerified(true);
             registerDto.setPassword(null);
 
-            user = this.userService.handleCreateNewUser(registerDto);
+            this.userService.handleCreateNewUser(registerDto);
+        }else{
+            if(!user.isVerified()){
+                this.userService.handleUpdateVerifyStatus(user);
+            }
         }
 
         return new DefaultOAuth2User(
